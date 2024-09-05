@@ -1,0 +1,92 @@
+name: Publish Service Image
+
+on:
+    workflow_call:
+        inputs:
+            repository:
+                description: "Dockerhub requires the repo to start with the user but this is handled in the workflow using github var."
+                required: true
+                type: string
+        secrets:
+            DOCKERHUB_USERNAME:
+                required: true
+            DOCKERHUB_TOKEN:
+                required: true
+
+concurrency:
+    group: ${{ inputs.repository }}-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    discover:
+        uses: Greboh-School/shared-pipelines/.github/workflows/dotnet-git-versioning.yaml@main
+        secrets: inherit
+    
+    test:
+        uses: Greboh-School/shared-pipelines/.github/workflows/dotnet-service-test.yaml@main
+        secrets: inherit
+
+    build-and-publish:
+        runs-on: ubuntu-latest
+        needs: [discover, test]
+        if: always() && !cancelled() && (needs.test.result == 'success' || needs.test.result == 'skipped')
+        steps:
+            -   uses: actions/checkout@v4
+                with: 
+                    fetch-depth: 0
+        
+            -   name: Set env vars
+                run: |
+                    echo "NUGET_USERNAME=${{ vars.NUGET_USERNAME }}" >> $GITHUB_ENV
+                    echo "NUGET_TOKEN=${{ secrets.ORG_FULL_ACCESS_TOKEN }}" >> $GITHUB_ENV
+
+            -   name: Configure dotnet
+                uses: actions/setup-dotnet@v4
+                with:
+                    source-url: ${{ vars.NUGET_LOCATION }}
+                env:
+                    NUGET_AUTH_TOKEN: ${{ secrets.ORG_FULL_ACCESS_TOKEN }}
+    
+            -   name: Configure QEMU
+                uses: docker/setup-qemu-action@v3
+    
+            -   name: Configure buildx
+                uses: docker/setup-buildx-action@v3
+
+            -   name: Dockerhub login
+                uses: docker/login-action@v2
+                with:
+                    username: ${{ secrets.DOCKERHUB_USERNAME }}
+                    password: ${{ secrets.DOCKERHUB_TOKEN }}
+    
+            -   name: Build and push Docker image release
+                if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+                uses: docker/build-push-action@v4
+                with:
+                    push: true
+                    tags: |
+                        ${{ secrets.DOCKERHUB_USERNAME }}/${{ inputs.repository }}:latest
+                        ${{ secrets.DOCKERHUB_USERNAME }}/${{ inputs.repository }}:edge
+                        ${{ secrets.DOCKERHUB_USERNAME }}/${{ inputs.repository }}:${{ needs.discover.outputs.version }}
+                    build-args: |
+                        version=${{ needs.discover.outputs.version }}
+                        NUGET_USERNAME=${{ vars.NUGET_USERNAME }}
+                        NUGET_TOKEN=${{ secrets.ORG_FULL_ACCESS_TOKEN }}
+
+            -   name: Build and push docker image pre-release
+                if: github.event_name == 'pull_request'
+                uses: docker/build-push-action@v4
+                with:
+                        push: true
+                        tags: |
+                            ${{ secrets.DOCKERHUB_USERNAME }}/${{ inputs.repository }}:edge
+                        build-args: |
+                            version=${{ needs.discover.outputs.version }}
+                            NUGET_USERNAME=${{ vars.NUGET_USERNAME }}
+                            NUGET_TOKEN=${{ secrets.ORG_FULL_ACCESS_TOKEN }}
+                
+            -   name: Tag version
+                if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+                run: |
+                    git tag ${{ needs.discover.outputs.version_tag }}
+                    git push origin --tags
