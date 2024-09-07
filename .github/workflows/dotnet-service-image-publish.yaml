@@ -38,14 +38,14 @@ jobs:
             -   name: Set env vars
                 run: |
                     echo "NUGET_USERNAME=${{ vars.NUGET_USERNAME }}" >> $GITHUB_ENV
-                    echo "NUGET_TOKEN=${{ secrets.ORG_FULL_ACCESS_TOKEN }}" >> $GITHUB_ENV
+                    echo "NUGET_TOKEN=${{ secrets.ORG_NUGET_TOKEN }}" >> $GITHUB_ENV
 
             -   name: Configure dotnet
                 uses: actions/setup-dotnet@v4
                 with:
                     source-url: ${{ vars.NUGET_LOCATION }}
                 env:
-                    NUGET_AUTH_TOKEN: ${{ secrets.ORG_FULL_ACCESS_TOKEN }}
+                    NUGET_AUTH_TOKEN: ${{ secrets.ORG_NUGET_TOKEN }}
     
             -   name: Configure QEMU
                 uses: docker/setup-qemu-action@v3
@@ -71,7 +71,7 @@ jobs:
                     build-args: |
                         version=${{ needs.discover.outputs.version }}
                         NUGET_USERNAME=${{ vars.NUGET_USERNAME }}
-                        NUGET_TOKEN=${{ secrets.ORG_FULL_ACCESS_TOKEN }}
+                        NUGET_TOKEN=${{ secrets.ORG_NUGET_TOKEN }}
 
             -   name: Build and push docker image pre-release
                 if: github.event_name == 'pull_request'
@@ -83,7 +83,7 @@ jobs:
                         build-args: |
                             version=${{ needs.discover.outputs.version }}
                             NUGET_USERNAME=${{ vars.NUGET_USERNAME }}
-                            NUGET_TOKEN=${{ secrets.ORG_FULL_ACCESS_TOKEN }}
+                            NUGET_TOKEN=${{ secrets.ORG_NUGET_TOKEN }}
                 
             -   name: Tag version
                 if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
